@@ -31,8 +31,8 @@ class _MyAppState extends State<MyApp> {
     // Platform messages may fail, so we use a try/catch PlatformException.
     // We also handle the message potentially returning null.
     try {
-      platformVersion =
-          await _posPrinterPlugin.getPlatformVersion() ?? 'Unknown platform version';
+      platformVersion = await _posPrinterPlugin.getPlatformVersion() ??
+          'Unknown platform version';
     } on PlatformException {
       platformVersion = 'Failed to get platform version.';
     }
@@ -54,9 +54,38 @@ class _MyAppState extends State<MyApp> {
         appBar: AppBar(
           title: const Text('Plugin example app'),
         ),
-        body: Center(
-          child: Text('Running on: $_platformVersion\n'),
-        ),
+        body: Column(children: [
+          Text('Running on: $_platformVersion\n'),
+          OutlinedButton(
+              onPressed: () async {
+                String? print = await _posPrinterPlugin.print();
+                debugPrint('--------------------');
+                debugPrint(print);
+              },
+              child: Text('Print')),
+          OutlinedButton(
+              onPressed: () async {
+                int? status = await _posPrinterPlugin.getStatus();
+                debugPrint('--------Get Status------------');
+                debugPrint(status.toString());
+              },
+              child: Text('Get Status')),
+          OutlinedButton(
+              onPressed: () async {
+                final setup =
+                    await _posPrinterPlugin.setupPage(height: 348, width: -1);
+                debugPrint('--------Setup page------------');
+                debugPrint(setup.toString());
+              },
+              child: Text('Set up page')),
+          OutlinedButton(
+              onPressed: () async {
+                int? dis = await _posPrinterPlugin.dispose();
+                debugPrint('-------dispose------------');
+                debugPrint(dis.toString());
+              },
+              child: Text('Dispose')),
+        ]),
       ),
     );
   }

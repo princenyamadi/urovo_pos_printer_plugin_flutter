@@ -1,4 +1,3 @@
-import 'package:bitmap/bitmap.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -171,7 +170,7 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
   // * draw bitmap
   @override
   Future<int?> drawBitmap({
-    required Bitmap bitmap,
+    required int bitmap,
     required int xDest,
     required int yDest,
   }) async {
@@ -356,7 +355,7 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
   /// prn_drawBarcode
   @override
   Future<int?> prnDrawBitmap({
-    required Bitmap bitmap,
+    required int bitmap,
     required int xDest,
     required int yDest,
   }) async {

@@ -1,5 +1,3 @@
-import 'package:bitmap/bitmap.dart';
-
 import 'pos_printer_platform_interface.dart';
 
 class PosPrinter {
@@ -126,7 +124,7 @@ class PosPrinter {
   }
 
   Future<int?> drawBitmap(
-      {required Bitmap bitmap, required int xDest, required int yDest}) {
+      {required int bitmap, required int xDest, required int yDest}) {
     return PosPrinterPlatform.instance.drawBitmap(
       bitmap: bitmap,
       xDest: xDest,
@@ -273,7 +271,7 @@ class PosPrinter {
   }
 
   Future<int?> prnDrawBitmap(
-      {required Bitmap bitmap, required int xDest, required int yDest}) {
+      {required int bitmap, required int xDest, required int yDest}) {
     return PosPrinterPlatform.instance.prnDrawBitmap(
       bitmap: bitmap,
       xDest: xDest,

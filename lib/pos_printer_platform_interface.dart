@@ -1,4 +1,3 @@
-import 'package:bitmap/bitmap.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'pos_printer_method_channel.dart';
@@ -133,7 +132,7 @@ abstract class PosPrinterPlatform extends PlatformInterface {
 
   /// draw image
   Future<int?> drawBitmap(
-      {required Bitmap bitmap, required int xDest, required int yDest}) {
+      {required int bitmap, required int xDest, required int yDest}) {
     throw UnimplementedError(
         'drawBitmap({required Bitmap bitmap, required int xDest, required int yDest}) has not been implemented');
   }
@@ -267,7 +266,7 @@ abstract class PosPrinterPlatform extends PlatformInterface {
 
   /// prn_drawBarcode
   Future<int?> prnDrawBitmap(
-      {required Bitmap bitmap, required int xDest, required int yDest}) {
+      {required int bitmap, required int xDest, required int yDest}) {
     throw UnimplementedError(
         'prnDrawBitmap({required Bitmap bitmap, required int xDest, required int yDest}) has not been implemented');
   }

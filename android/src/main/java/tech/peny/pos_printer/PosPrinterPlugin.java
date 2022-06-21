@@ -133,7 +133,8 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
 //     set gray level of printer
         ArrayList arguments = (ArrayList) call.arguments;
         int level = (int) arguments.get(0);
-        result.success(getPrinterManager().setGrayLevel(level));
+        getPrinterManager().setGrayLevel(level);
+        result.success(0);
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
       }
@@ -316,7 +317,7 @@ getPrinterManager().prn_close();
         ArrayList arguments = (ArrayList) call.arguments;
         int length = (int) arguments.get(0);
 //     prn_paperForWard
-getPrinterManager().prn_paperForWard(length);
+      getPrinterManager().prn_paperForWard(length);
         result.success( 0);
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
@@ -326,8 +327,8 @@ getPrinterManager().prn_paperForWard(length);
         ArrayList arguments = (ArrayList) call.arguments;
         int length = (int) arguments.get(0);
 //     prn_paperBack
-getPrinterManager().prn_paperBack(length);
-        result.success( );
+      getPrinterManager().prn_paperBack(length);
+        result.success(0);
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
       }

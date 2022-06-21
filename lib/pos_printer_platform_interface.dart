@@ -92,6 +92,7 @@ abstract class PosPrinterPlatform extends PlatformInterface {
       required int x,
       required int y,
       required String fontName,
+      required int fontSize,
       required bool isBold,
       required bool isItalic,
       required int rotate}) {
@@ -225,6 +226,7 @@ abstract class PosPrinterPlatform extends PlatformInterface {
       required int x,
       required int y,
       required String fontName,
+      required int fontSize,
       required bool isBold,
       required bool isItalic,
       required int rotate}) {

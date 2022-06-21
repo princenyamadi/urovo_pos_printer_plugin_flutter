@@ -61,6 +61,7 @@ class PosPrinter {
       required int x,
       required int y,
       required String fontName,
+      required int fontSize,
       required bool isBold,
       required bool isItalic,
       required int rotate}) {
@@ -69,6 +70,7 @@ class PosPrinter {
       x: x,
       y: y,
       fontName: fontName,
+      fontSize: fontSize,
       isBold: isBold,
       isItalic: isItalic,
       rotate: rotate,
@@ -208,6 +210,7 @@ class PosPrinter {
       required int x,
       required int y,
       required String fontName,
+      required int fontSize,
       required bool isBold,
       required bool isItalic,
       required int rotate}) {
@@ -216,6 +219,7 @@ class PosPrinter {
       x: x,
       y: y,
       fontName: fontName,
+      fontSize: fontSize,
       isBold: isBold,
       isItalic: isItalic,
       rotate: rotate,

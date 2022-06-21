@@ -100,6 +100,7 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
       required int x,
       required int y,
       required String fontName,
+      required int fontSize,
       required bool isBold,
       required bool isItalic,
       required int rotate}) async {
@@ -286,6 +287,7 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
       required int x,
       required int y,
       required String fontName,
+      required int fontSize,
       required bool isBold,
       required bool isItalic,
       required int rotate}) async {

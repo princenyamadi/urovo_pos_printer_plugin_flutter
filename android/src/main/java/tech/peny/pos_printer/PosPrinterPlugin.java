@@ -297,7 +297,8 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
       try{
 
 //     prn_close
-        result.success( getPrinterManager().prn_close());
+getPrinterManager().prn_close();
+        result.success( 0);
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
       }
@@ -315,7 +316,8 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
         ArrayList arguments = (ArrayList) call.arguments;
         int length = (int) arguments.get(0);
 //     prn_paperForWard
-        result.success( getPrinterManager().prn_paperForWard(length));
+getPrinterManager().prn_paperForWard(length);
+        result.success( 0);
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
       }
@@ -324,7 +326,8 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
         ArrayList arguments = (ArrayList) call.arguments;
         int length = (int) arguments.get(0);
 //     prn_paperBack
-        result.success( getPrinterManager().prn_paperBack(length));
+getPrinterManager().prn_paperBack(length);
+        result.success( );
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
       }

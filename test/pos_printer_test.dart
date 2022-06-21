@@ -1,4 +1,3 @@
-import 'package:bitmap/src/bitmap.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pos_printer/pos_printer.dart';
 import 'package:pos_printer/pos_printer_platform_interface.dart';
@@ -38,7 +37,7 @@ class MockPosPrinterPlatform
 
   @override
   Future<int?> drawBitmap(
-      {required Bitmap bitmap, required int xDest, required int yDest}) {
+      {required int bitmap, required int xDest, required int yDest}) {
     // TODO: implement drawBitmap
     throw UnimplementedError();
   }
@@ -159,7 +158,7 @@ class MockPosPrinterPlatform
 
   @override
   Future<int?> prnDrawBitmap(
-      {required Bitmap bitmap, required int xDest, required int yDest}) {
+      {required int bitmap, required int xDest, required int yDest}) {
     // TODO: implement prnDrawBitmap
     throw UnimplementedError();
   }

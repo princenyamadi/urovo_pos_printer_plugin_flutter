@@ -37,7 +37,7 @@ class MockPosPrinterPlatform
 
   @override
   Future<int?> drawBitmap(
-      {required int bitmap, required int xDest, required int yDest}) {
+      {required String image, required int xDest, required int yDest}) {
     // TODO: implement drawBitmap
     throw UnimplementedError();
   }
@@ -159,7 +159,7 @@ class MockPosPrinterPlatform
 
   @override
   Future<int?> prnDrawBitmap(
-      {required int bitmap, required int xDest, required int yDest}) {
+      {required String image, required int xDest, required int yDest}) {
     // TODO: implement prnDrawBitmap
     throw UnimplementedError();
   }

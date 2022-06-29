@@ -133,7 +133,7 @@ abstract class PosPrinterPlatform extends PlatformInterface {
 
   /// draw image
   Future<int?> drawBitmap(
-      {required int bitmap, required int xDest, required int yDest}) {
+      {required String image, required int xDest, required int yDest}) {
     throw UnimplementedError(
         'drawBitmap({required Bitmap bitmap, required int xDest, required int yDest}) has not been implemented');
   }
@@ -268,7 +268,7 @@ abstract class PosPrinterPlatform extends PlatformInterface {
 
   /// prn_drawBarcode
   Future<int?> prnDrawBitmap(
-      {required int bitmap, required int xDest, required int yDest}) {
+      {required String image, required int xDest, required int yDest}) {
     throw UnimplementedError(
         'prnDrawBitmap({required Bitmap bitmap, required int xDest, required int yDest}) has not been implemented');
   }

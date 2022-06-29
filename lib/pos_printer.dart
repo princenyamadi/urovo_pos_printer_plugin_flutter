@@ -126,9 +126,9 @@ class PosPrinter {
   }
 
   Future<int?> drawBitmap(
-      {required int bitmap, required int xDest, required int yDest}) {
+      {required String image, required int xDest, required int yDest}) {
     return PosPrinterPlatform.instance.drawBitmap(
-      bitmap: bitmap,
+      image: image,
       xDest: xDest,
       yDest: yDest,
     );
@@ -275,9 +275,9 @@ class PosPrinter {
   }
 
   Future<int?> prnDrawBitmap(
-      {required int bitmap, required int xDest, required int yDest}) {
+      {required String image, required int xDest, required int yDest}) {
     return PosPrinterPlatform.instance.prnDrawBitmap(
-      bitmap: bitmap,
+      image: image,
       xDest: xDest,
       yDest: yDest,
     );

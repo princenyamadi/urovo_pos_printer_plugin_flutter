@@ -109,6 +109,7 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
       'x': x,
       'y': y,
       'fontName': fontName,
+      'fontSize': fontSize,
       'isBold': isBold,
       'isItalic': isItalic,
       'rotate': rotate,
@@ -171,12 +172,12 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
   // * draw bitmap
   @override
   Future<int?> drawBitmap({
-    required int bitmap,
+    required String image,
     required int xDest,
     required int yDest,
   }) async {
     return await methodChannel.invokeMethod('drawBitmap', {
-      'bitmap': bitmap,
+      'image': image,
       'xDest': xDest,
       'yDest': yDest,
     });
@@ -357,12 +358,12 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
   /// prn_drawBarcode
   @override
   Future<int?> prnDrawBitmap({
-    required int bitmap,
+    required String image,
     required int xDest,
     required int yDest,
   }) async {
     return await methodChannel.invokeMethod('prn_drawBitmap', {
-      'bitmap': bitmap,
+      'image': image,
       'xDest': xDest,
       'yDest': yDest,
     });

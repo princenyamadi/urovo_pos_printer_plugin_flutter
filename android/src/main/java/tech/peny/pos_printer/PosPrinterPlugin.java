@@ -18,10 +18,12 @@ import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
 import android.widget.Spinner;
 
+import java.io.BufferedInputStream;
+import java.io.FileInputStream;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.HashMap;
-
+import android.graphics.BitmapFactory;
 /** PosPrinterPlugin */
 public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
   /// The MethodChannel that will the communication between Flutter and native Android
@@ -75,6 +77,8 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
       System.out.println(ret);
       if(ret == PRNSTS_OK){
         getPrinterManager().setupPage(384,-1);
+        System.out.println("drawing");
+        getPrinterManager().prn_drawText("Prince",200,200,"simsun",32,false,false,0);
 
 
 
@@ -86,7 +90,39 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
 
         int height = 0;
 
-        mPrinterManager.drawText("Prince!!", 5,5," l",5,true,false, 100);
+
+        // mPrinterManager.drawText("Prince!!", 5,5," l",5,true,false, 100);
+
+        getPrinterManager().prn_drawLine(32, 8, 136, 8, 8);
+        getPrinterManager().prn_drawLine(32, 12, 136, 12, 8);
+        getPrinterManager().prn_drawLine(32, 18, 136, 18, 8);
+        getPrinterManager().prn_drawLine(32, 24, 136, 24, 8);
+        getPrinterManager().prn_drawLine(32, 32, 136, 32, 32);
+
+        getPrinterManager().prn_drawLine(136, 56, 240, 56, 8);
+        getPrinterManager().prn_drawLine(136, 62, 240, 62, 8);
+        getPrinterManager().prn_drawLine(136, 68, 240, 68, 8);
+        getPrinterManager().prn_drawLine(136, 74, 240, 74, 8);
+        getPrinterManager().prn_drawLine(136, 80, 240, 80, 32);
+
+        getPrinterManager().prn_drawLine(240, 104, 344, 104, 8);
+        getPrinterManager().prn_drawLine(240, 110, 344, 110, 8);
+        getPrinterManager().prn_drawLine(240, 116, 344, 116, 8);
+        getPrinterManager().prn_drawLine(240, 122, 344, 122, 8);
+        getPrinterManager().prn_drawLine(240, 128, 344, 128, 32);
+
+        getPrinterManager().prn_drawLine(136, 152, 240, 152, 8);
+        getPrinterManager().prn_drawLine(136, 158, 240, 158, 8);
+        getPrinterManager().prn_drawLine(136, 164, 240, 164, 8);
+        getPrinterManager().prn_drawLine(136, 170, 240, 170, 8);
+        getPrinterManager().prn_drawLine(136, 176, 240, 176, 32);
+
+        getPrinterManager().prn_drawLine(32, 200, 136, 200, 8);
+        getPrinterManager().prn_drawLine(32, 206, 136, 206, 8);
+        getPrinterManager().prn_drawLine(32, 212, 136, 212, 8);
+        getPrinterManager().prn_drawLine(32, 218, 136, 218, 8);
+        getPrinterManager().prn_drawLine(32, 224, 136, 224, 32);
+        getPrinterManager().printPage(0);
 
       }
 
@@ -192,12 +228,14 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
         int x1 = (int) arguments.get("x1");
         int y1 = (int) arguments.get("y1");
         int lineWidth = (int) arguments.get("lineWidth");
+        System.out.println("x0:"+x0+"y0:"+y0+"x1:"+x1+"y1:"+y1+"lineWidth:"+lineWidth);
 
         result.success( getPrinterManager().drawLine(x0,y0,x1,y1,lineWidth));
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
       }
     }else if(call.method.equals("drawText")){
+      System.out.println("inside drawText");
       try{
 
 //     drawText
@@ -210,8 +248,10 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
         boolean bold = (boolean) arguments.get("isBold");
         boolean italic = (boolean) arguments.get("isItalic");
         int rotate = (int) arguments.get("rotate");
+        System.out.println(arguments.toString());
 
-        result.success( getPrinterManager().drawText(data,x,y,fontName,fontSize,bold,italic,rotate));
+        int resp = getPrinterManager().drawText(data,x,y,fontName,fontSize,bold,italic,rotate);
+        result.success(resp);
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
       }
@@ -261,11 +301,17 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
 
 //     drawBitmap
         HashMap arguments = (HashMap) call.arguments;
-        Bitmap bitmap = (Bitmap) arguments.get("bitmap");
+        String image = (String) arguments.get("image");
+
+        FileInputStream input = new FileInputStream(image);
+        BufferedInputStream buffer = new BufferedInputStream(input);
+        byte[] bMapArray = new byte[buffer.available()];
+        buffer.read(bMapArray);
+        Bitmap bitmap = BitmapFactory.decodeByteArray(bMapArray,0,bMapArray.length);
         int xDest = (int) arguments.get("xDest");
         int yDest = (int) arguments.get("yDest");
-
-
+        
+        ///
         result.success( getPrinterManager().drawBitmap(bitmap, xDest,yDest));
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
@@ -281,7 +327,7 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
         int widthDest = (int) arguments.get("widthDest");
         int heightDest = (int) arguments.get("heightDest");
 
-
+        
         result.success( getPrinterManager().drawBitmapEx(pbmp, xDest,yDest,widthDest,heightDest));
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());

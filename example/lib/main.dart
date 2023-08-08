@@ -1,6 +1,4 @@
 import 'dart:io';
-import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -9,7 +7,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pos_printer/pos_printer.dart';
-import 'package:image/image.dart' as img;
 
 void main() {
   runApp(const MyApp());
@@ -80,14 +77,14 @@ class _MyAppState extends State<MyApp> {
                 debugPrint('--------------------');
                 debugPrint(print);
               },
-              child: Text('Print')),
+              child: const Text('Print')),
           OutlinedButton(
               onPressed: () async {
                 int? status = await _posPrinterPlugin.getStatus();
                 debugPrint('--------Get Status------------');
                 debugPrint(status.toString());
               },
-              child: Text('Get Status')),
+              child: const Text('Get Status')),
           OutlinedButton(
               onPressed: () async {
                 final setup =
@@ -95,7 +92,7 @@ class _MyAppState extends State<MyApp> {
                 debugPrint('--------Setup page------------');
                 debugPrint(setup.toString());
               },
-              child: Text('setup page')),
+              child: const Text('setup page')),
           OutlinedButton(
               onPressed: () async {
                 await _posPrinterPlugin.setupPage(height: 348, width: -1);
@@ -104,20 +101,20 @@ class _MyAppState extends State<MyApp> {
                     x0: 30, y0: 20, x1: 10, y1: 30, lineWidth: 89);
                 _posPrinterPlugin.printPage(0);
               },
-              child: Text('Draw Li    ne')),
+              child: const Text('Draw Li    ne')),
           OutlinedButton(
               onPressed: () async {
                 int? dis = await _posPrinterPlugin.dispose();
                 debugPrint('-------dispose------------');
                 debugPrint(dis.toString());
               },
-              child: Text('Dispose')),
+              child: const Text('Dispose')),
           OutlinedButton(
               onPressed: () async {
                 await _posPrinterPlugin.prnPaperForWard(100);
                 debugPrint('-------forward------------');
               },
-              child: Text('Forward')),
+              child: const Text('Forward')),
           OutlinedButton(
               onPressed: () async {
                 await _posPrinterPlugin.setupPage(height: 384, width: -1);
@@ -133,7 +130,7 @@ class _MyAppState extends State<MyApp> {
                 await _posPrinterPlugin.printPage(0);
                 debugPrint('-------drawText------------');
               },
-              child: Text('Draw Text')),
+              child: const Text('Draw Text')),
           OutlinedButton(
               onPressed: () async {
                 // ByteData imageBytes =
@@ -167,7 +164,7 @@ class _MyAppState extends State<MyApp> {
 
                 debugPrint('-------Draw Bitmap------------');
               },
-              child: Text('Draw Bitmap  ')),
+              child: const Text('Draw Bitmap  ')),
         ]),
       ),
     );

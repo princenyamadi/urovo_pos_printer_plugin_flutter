@@ -54,12 +54,16 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  Future<File> getImageFileFromAssets(String path) async {
-    final byteData = await rootBundle.load(path);
+  Future<File> getImageFileFromAssets(String path,
+      {bool isAsset = true}) async {
+    // ! remove null after network image is implemented
+    late ByteData? byteData;
+
+    byteData = isAsset ? await rootBundle.load(path) : null;
 
     final file = await File('${(await getTemporaryDirectory()).path}/$path')
         .create(recursive: true);
-    await file.writeAsBytes(byteData.buffer
+    await file.writeAsBytes(byteData!.buffer
         .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
 
     return file;
@@ -120,7 +124,7 @@ class _MyAppState extends State<MyApp> {
               child: Text('Forward')),
           OutlinedButton(
               onPressed: () async {
-                await _posPrinterPlugin.setupPage(height: 384, width: -1);
+                await _posPrinterPlugin.setupPage(height: 384, width: 100);
                 await _posPrinterPlugin.drawText(
                     data: "Prince>>",
                     x: 200,
@@ -163,6 +167,15 @@ class _MyAppState extends State<MyApp> {
                 final resImage = await _posPrinterPlugin.drawBitmap(
                     image: image.path, xDest: 100, yDest: 100);
                 debugPrint(resImage.toString());
+                await _posPrinterPlugin.drawText(
+                    data: "Prince>>",
+                    x: 200,
+                    y: 200,
+                    fontName: "simsun",
+                    fontSize: 14,
+                    isBold: true,
+                    isItalic: false,
+                    rotate: 0);
                 await _posPrinterPlugin.printPage(0);
 
                 debugPrint('-------Draw Bitmap------------');

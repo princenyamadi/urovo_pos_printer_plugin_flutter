@@ -76,7 +76,7 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
       System.out.println("Printer status");
       System.out.println(ret);
       if(ret == PRNSTS_OK){
-        getPrinterManager().setupPage(384,-1);
+        getPrinterManager().setupPage(7,-1);
         System.out.println("drawing");
         // getPrinterManager().prn_drawText("Prince",200,200,"simsun",32,false,false,0);
 

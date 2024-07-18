@@ -78,7 +78,7 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
       if(ret == PRNSTS_OK){
         getPrinterManager().setupPage(384,-1);
         System.out.println("drawing");
-        getPrinterManager().prn_drawText("Prince",200,200,"simsun",32,false,false,0);
+        // getPrinterManager().prn_drawText("Prince",200,200,"simsun",32,false,false,0);
 
 
 
@@ -93,34 +93,34 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
 
         // mPrinterManager.drawText("Prince!!", 5,5," l",5,true,false, 100);
 
-        getPrinterManager().prn_drawLine(32, 8, 136, 8, 8);
-        getPrinterManager().prn_drawLine(32, 12, 136, 12, 8);
-        getPrinterManager().prn_drawLine(32, 18, 136, 18, 8);
-        getPrinterManager().prn_drawLine(32, 24, 136, 24, 8);
-        getPrinterManager().prn_drawLine(32, 32, 136, 32, 32);
+        // getPrinterManager().prn_drawLine(32, 8, 136, 8, 8);
+        // getPrinterManager().prn_drawLine(32, 12, 136, 12, 8);
+        // getPrinterManager().prn_drawLine(32, 18, 136, 18, 8);
+        // getPrinterManager().prn_drawLine(32, 24, 136, 24, 8);
+        // getPrinterManager().prn_drawLine(32, 32, 136, 32, 32);
 
-        getPrinterManager().prn_drawLine(136, 56, 240, 56, 8);
-        getPrinterManager().prn_drawLine(136, 62, 240, 62, 8);
-        getPrinterManager().prn_drawLine(136, 68, 240, 68, 8);
-        getPrinterManager().prn_drawLine(136, 74, 240, 74, 8);
-        getPrinterManager().prn_drawLine(136, 80, 240, 80, 32);
+        // getPrinterManager().prn_drawLine(136, 56, 240, 56, 8);
+        // getPrinterManager().prn_drawLine(136, 62, 240, 62, 8);
+        // getPrinterManager().prn_drawLine(136, 68, 240, 68, 8);
+        // getPrinterManager().prn_drawLine(136, 74, 240, 74, 8);
+        // getPrinterManager().prn_drawLine(136, 80, 240, 80, 32);
 
-        getPrinterManager().prn_drawLine(240, 104, 344, 104, 8);
-        getPrinterManager().prn_drawLine(240, 110, 344, 110, 8);
-        getPrinterManager().prn_drawLine(240, 116, 344, 116, 8);
-        getPrinterManager().prn_drawLine(240, 122, 344, 122, 8);
-        getPrinterManager().prn_drawLine(240, 128, 344, 128, 32);
+        // getPrinterManager().prn_drawLine(240, 104, 344, 104, 8);
+        // getPrinterManager().prn_drawLine(240, 110, 344, 110, 8);
+        // getPrinterManager().prn_drawLine(240, 116, 344, 116, 8);
+        // getPrinterManager().prn_drawLine(240, 122, 344, 122, 8);
+        // getPrinterManager().prn_drawLine(240, 128, 344, 128, 32);
 
-        getPrinterManager().prn_drawLine(136, 152, 240, 152, 8);
-        getPrinterManager().prn_drawLine(136, 158, 240, 158, 8);
-        getPrinterManager().prn_drawLine(136, 164, 240, 164, 8);
-        getPrinterManager().prn_drawLine(136, 170, 240, 170, 8);
-        getPrinterManager().prn_drawLine(136, 176, 240, 176, 32);
+        // getPrinterManager().prn_drawLine(136, 152, 240, 152, 8);
+        // getPrinterManager().prn_drawLine(136, 158, 240, 158, 8);
+        // getPrinterManager().prn_drawLine(136, 164, 240, 164, 8);
+        // getPrinterManager().prn_drawLine(136, 170, 240, 170, 8);
+        // getPrinterManager().prn_drawLine(136, 176, 240, 176, 32);
 
-        getPrinterManager().prn_drawLine(32, 200, 136, 200, 8);
-        getPrinterManager().prn_drawLine(32, 206, 136, 206, 8);
-        getPrinterManager().prn_drawLine(32, 212, 136, 212, 8);
-        getPrinterManager().prn_drawLine(32, 218, 136, 218, 8);
+        // getPrinterManager().prn_drawLine(32, 200, 136, 200, 8);
+        // getPrinterManager().prn_drawLine(32, 206, 136, 206, 8);
+        // getPrinterManager().prn_drawLine(32, 212, 136, 212, 8);
+        // getPrinterManager().prn_drawLine(32, 218, 136, 218, 8);
         getPrinterManager().prn_drawLine(32, 224, 136, 224, 32);
         getPrinterManager().printPage(0);
 
@@ -213,8 +213,8 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
 //     print page
         ArrayList arguments = (ArrayList) call.arguments;
         int rotate = (int) arguments.get(0);
-
-        result.success( getPrinterManager().printPage(rotate));
+        int ret = getPrinterManager().printPage(rotate);
+        result.success(ret);
       }catch (Exception ex){
         result.error("1", ex.getMessage(), ex.getStackTrace());
       }

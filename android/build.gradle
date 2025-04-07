@@ -1,16 +1,7 @@
 group 'tech.peny.pos_printer'
-version '1.0'
+version '1.2'
 
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
 
-    dependencies {
-        classpath 'com.android.tools.build:gradle:3.4.2'
-    }
-}
 
 rootProject.allprojects {
     repositories {
@@ -22,7 +13,8 @@ rootProject.allprojects {
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 31
+    namespace 'tech.peny.pos_printer'
+    compileSdkVersion 35
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

@@ -43,40 +43,42 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     return setup;
   }
 
-  //* sets gray level
   @override
   Future<int?> setGrayLevel(int level) async {
-    final setLevel = await methodChannel.invokeMethod("setGrayLevel", [level]);
+    final setLevel = await methodChannel.invokeMethod<int>("setGrayLevel", {
+      'level': level,
+    });
     return setLevel;
   }
 
-  //* sets paper feed
   @override
   Future<int?> paperFeed(int length) async {
-    final length = await methodChannel.invokeMethod('paperFeed');
-    return length;
+    final result = await methodChannel.invokeMethod<int>('paperFeed', {
+      'length': length,
+    });
+    return result;
   }
 
-//* set speed level [0-9]
   @override
   Future<int?> setSpeedLevel(int level) async {
-    final level = await methodChannel.invokeMethod('setSpeedLevel');
-    return level;
+    final result = await methodChannel.invokeMethod<int>('setSpeedLevel', {
+      'level': level,
+    });
+    return result;
   }
 
-  // * clears page setup
   @override
   Future<int?> clearPage() async {
     return await methodChannel.invokeMethod('clearPage');
   }
 
-  //* print page
   @override
   Future<int?> printPage(int rotate) async {
-    return await methodChannel.invokeMethod('printPage', [rotate]);
+    return await methodChannel.invokeMethod('printPage', {
+      'rotate': rotate,
+    });
   }
 
-  //* draw
   @override
   Future<int?> drawLine(
       {required int x0,
@@ -93,7 +95,6 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  //* draw text
   @override
   Future<int?> drawText(
       {required String data,
@@ -116,7 +117,6 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  //* draw text extended
   @override
   Future<int?> drawTextEx(
       {required String data,
@@ -147,7 +147,6 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  //* draw barcode
   @override
   Future<int?> drawBarcode({
     required String data,
@@ -169,7 +168,6 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  // * draw bitmap
   @override
   Future<int?> drawBitmap({
     required String image,
@@ -183,7 +181,6 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  // * draw bitmap ex
   @override
   Future<int?> drawBitmapEx({
     required List<int> bytes,
@@ -201,70 +198,70 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  // * printer open
+  // Legacy prn_ methods for backward compatibility
   @override
   Future<int?> prnOpen() async {
-    return await methodChannel.invokeMethod('prn_open');
+    return await methodChannel.invokeMethod('prnOpen');
   }
 
-  // * printer close
   @override
   Future<int?> prnClose() async {
-    return await methodChannel.invokeMethod('prn_close');
+    return await methodChannel.invokeMethod('prnClose');
   }
 
-  // * printer set black
   @override
   Future<int?> prnSetBlack(int level) async {
-    return await methodChannel.invokeMethod('prn_setBlack', [level]);
+    return await methodChannel.invokeMethod('prnSetBlack', {
+      'level': level,
+    });
   }
 
-  // * print paper forward
   @override
   Future<int?> prnPaperForWard(int length) async {
-    return await methodChannel.invokeMethod('prn_paperForWard', [length]);
+    return await methodChannel.invokeMethod('prnPaperForWard', {
+      'length': length,
+    });
   }
 
-  // * print paper back
   @override
   Future<int?> prnPaperBack(int length) async {
-    return await methodChannel.invokeMethod('prn_paperBack', [length]);
+    return await methodChannel.invokeMethod('prnPaperBack', {
+      'length': length,
+    });
   }
 
-  // * printer set speed [0-9]
   @override
   Future<int?> prnSetSpeed(int level) async {
-    return await methodChannel.invokeMethod('prn_setSpeed', [level]);
+    return await methodChannel.invokeMethod('prnSetSpeed', {
+      'level': level,
+    });
   }
 
-  // * get printer temperature
   @override
   Future<int?> prnGetTemp() async {
-    return await methodChannel.invokeMethod('prn_getTemp');
+    return await methodChannel.invokeMethod('prnGetTemp');
   }
 
-  // * set up page
   @override
-  Future<int?> prnSetupPage({required int width, required int height}) {
-    return methodChannel.invokeMethod('prn_setupPage', {
+  Future<int?> prnSetupPage({required int width, required int height}) async {
+    return methodChannel.invokeMethod('prnSetupPage', {
       'width': width,
       'height': height,
     });
   }
 
-  //* clear page setup
   @override
   Future<int?> prnClearPage() async {
-    return await methodChannel.invokeMethod('prn_clearPage');
+    return await methodChannel.invokeMethod('prnClearPage');
   }
 
-  // * print page
   @override
   Future<int?> prnPrintPage(int rotate) async {
-    return await methodChannel.invokeMethod('prn_printPage', [rotate]);
+    return await methodChannel.invokeMethod('prnPrintPage', {
+      'rotate': rotate,
+    });
   }
 
-  // * draw line
   @override
   Future<int?> prnDrawLine(
       {required int x0,
@@ -272,7 +269,7 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
       required int x1,
       required int y1,
       required int lineWidth}) async {
-    return await methodChannel.invokeMethod('prn_drawLine', {
+    return await methodChannel.invokeMethod('prnDrawLine', {
       'x0': x0,
       'y0': y0,
       'x1': x1,
@@ -281,7 +278,6 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  //* draw text
   @override
   Future<int?> prnDrawText(
       {required String data,
@@ -292,18 +288,18 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
       required bool isBold,
       required bool isItalic,
       required int rotate}) async {
-    return await methodChannel.invokeMethod('prn_drawText', {
+    return await methodChannel.invokeMethod('prnDrawText', {
       'data': data,
       'x': x,
       'y': y,
       'fontName': fontName,
+      'fontSize': fontSize,
       'isBold': isBold,
       'isItalic': isItalic,
       'rotate': rotate,
     });
   }
 
-  // * draw text extended
   @override
   Future<int?> prnDrawTextEx(
       {required String data,
@@ -318,7 +314,7 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
       required int rotate,
       required int style,
       required int format}) async {
-    return await methodChannel.invokeMethod('prn_drawTextEx', {
+    return await methodChannel.invokeMethod('prnDrawTextEx', {
       'data': data,
       'x': x,
       'y': y,
@@ -334,7 +330,6 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  // * prn_drawBarcode
   @override
   Future<int?> prnDrawBarcode(
       {required String data,
@@ -344,7 +339,7 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
       required int width,
       required int height,
       required int rotate}) async {
-    return await methodChannel.invokeMethod('prn_drawBarcode', {
+    return await methodChannel.invokeMethod('prnDrawBarcode', {
       'data': data,
       'x': x,
       'y': y,
@@ -355,33 +350,29 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
     });
   }
 
-  /// prn_drawBarcode
   @override
   Future<int?> prnDrawBitmap({
     required String image,
     required int xDest,
     required int yDest,
   }) async {
-    return await methodChannel.invokeMethod('prn_drawBitmap', {
+    return await methodChannel.invokeMethod('prnDrawBitmap', {
       'image': image,
       'xDest': xDest,
       'yDest': yDest,
     });
   }
 
-  //* prn_getStatus
   @override
   Future<int?> prnGetStatus() async {
-    return await methodChannel.invokeMethod('prn_getStatus');
+    return await methodChannel.invokeMethod('prnGetStatus');
   }
 
-  // * get temperature
   @override
   Future<int?> getTemp() async {
     return await methodChannel.invokeMethod('getTemp');
   }
 
-  //* printCachedPage
   @override
   Future<int?> printCachedPage() async {
     return await methodChannel.invokeMethod('printCachedPage');

@@ -115,7 +115,7 @@ class MockPosPrinterPlatform
   }
 
   @override
-  Future<String?> print() {
+  Future<int?> print() {
     // TODO: implement print
     throw UnimplementedError();
   }

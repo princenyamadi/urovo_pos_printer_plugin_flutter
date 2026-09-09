@@ -1,11 +1,46 @@
 import 'pos_printer_platform_interface.dart';
 
 class PosPrinter {
+  /// Printer status / print-result codes. Returned by [getStatus], [prnGetStatus],
+  /// [print], [printPage], [prnPrintPage] and [printCachedPage]. Any value other
+  /// than [statusOk] means the page was **not** printed.
+  static const int statusOk = 0;
+  static const int statusOutOfPaper = -1;
+  static const int statusOverHeat = -2;
+  static const int statusUnderVoltage = -3;
+  static const int statusBusy = -4;
+  static const int statusError = -256;
+  static const int statusDriverError = -257;
+
+  /// Human-readable text for a status code (`statusX` or a raw SDK code).
+  static String statusMessage(int? code) {
+    switch (code) {
+      case statusOk:
+        return 'OK';
+      case statusOutOfPaper:
+        return 'Out of paper';
+      case statusOverHeat:
+        return 'Printer overheated';
+      case statusUnderVoltage:
+        return 'Battery too low to print';
+      case statusBusy:
+        return 'Printer busy';
+      case statusDriverError:
+        return 'Printer driver error';
+      case null:
+        return 'No response from printer';
+      default:
+        return 'Printer error ($code)';
+    }
+  }
+
   Future<String?> getPlatformVersion() {
     return PosPrinterPlatform.instance.getPlatformVersion();
   }
 
-  Future<String?> print() {
+  /// Prints a short diagnostic test line. Returns a `statusX` code
+  /// ([statusOk] means it printed).
+  Future<int?> print() {
     return PosPrinterPlatform.instance.print();
   }
 

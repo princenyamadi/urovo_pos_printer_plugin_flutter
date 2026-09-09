@@ -27,7 +27,7 @@ abstract class PosPrinterPlatform extends PlatformInterface {
     throw UnimplementedError('platformVersion() has not been implemented.');
   }
 
-  Future<String?> print() {
+  Future<int?> print() {
     throw UnimplementedError('print() has not been implemented.');
   }
 

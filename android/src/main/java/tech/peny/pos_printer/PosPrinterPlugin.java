@@ -11,554 +11,785 @@ import io.flutter.plugin.common.MethodChannel.Result;
 import android.app.Activity;
 import android.device.PrinterManager;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
-import android.view.View;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.ImageButton;
-import android.widget.Spinner;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
+import android.util.Log;
 
-import java.io.BufferedInputStream;
+import java.io.File;
 import java.io.FileInputStream;
-import java.lang.reflect.Array;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import android.graphics.BitmapFactory;
+import java.util.Map;
+
 /** PosPrinterPlugin */
 public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
+  private static final String TAG = "PosPrinterPlugin";
+  
   /// The MethodChannel that will the communication between Flutter and native Android
-  ///
-  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
-  /// when the Flutter Engine is detached from the Activity
   private MethodChannel channel;
   private PrinterManager mPrinterManager;
+  private boolean isPrinterInitialized = false;
 
-  private PrinterManager getPrinterManager() {
-    if (mPrinterManager == null) {
-      mPrinterManager = new PrinterManager();
-      mPrinterManager.open();
-    }
-    return mPrinterManager;
+  // Printing blocks until the page is done, so page-commit calls run off the
+  // platform thread on a single HandlerThread (its own Looper, in case the SDK
+  // posts internally). Single thread => commits run in the order Dart made them.
+  private HandlerThread printThread;
+  private Handler printHandler;
+  private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+  // ponytail: fixed 3-try BUSY backoff, 300ms apart. Widen if slow devices report false BUSY.
+  private final static int PRINT_MAX_TRIES = 3;
+  private final static long PRINT_BUSY_DELAY_MS = 300;
+
+  private interface PrintOp {
+    int run(PrinterManager pm);
   }
-  //Printer gray value 0-4
+
+  /**
+   * Runs a page-commit off the platform thread: checks printer status (retrying
+   * while BUSY), runs the op if OK, and replies on the platform thread with the
+   * resulting PRNSTS_* code. Any value other than PRNSTS_OK means nothing printed.
+   */
+  private void commitAsync(final Result result, final PrintOp op) {
+    printHandler.post(new Runnable() {
+      @Override
+      public void run() {
+        final Object reply;
+        try {
+          PrinterManager pm = getPrinterManager();
+          if (pm == null) {
+            postError(result, "PRINTER_ERROR", "Printer not initialized");
+            return;
+          }
+          int status = pm.getStatus();
+          for (int tries = 1; status == PRNSTS_BUSY && tries < PRINT_MAX_TRIES; tries++) {
+            try {
+              Thread.sleep(PRINT_BUSY_DELAY_MS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+            status = pm.getStatus();
+          }
+          reply = (status == PRNSTS_OK) ? op.run(pm) : status;
+        } catch (final Exception ex) {
+          postError(result, "PRINTER_ERROR", ex.getMessage());
+          return;
+        }
+        mainHandler.post(new Runnable() {
+          @Override
+          public void run() {
+            result.success(reply);
+          }
+        });
+      }
+    });
+  }
+
+  private void postError(final Result result, final String code, final String message) {
+    mainHandler.post(new Runnable() {
+      @Override
+      public void run() {
+        result.error(code, message, null);
+      }
+    });
+  }
+
+  // Printer configuration constants
   private final static int DEF_PRINTER_HUE_VALUE = 0;
   private final static int MIN_PRINTER_HUE_VALUE = 0;
   private final static int MAX_PRINTER_HUE_VALUE = 4;
 
-  //Print speed value 0-9
   private final static int DEF_PRINTER_SPEED_VALUE = 9;
   private final static int MIN_PRINTER_SPEED_VALUE = 0;
   private final static int MAX_PRINTER_SPEED_VALUE = 9;
 
-  // Printer status
-  private final static int PRNSTS_OK = 0;                //OK
-  private final static int PRNSTS_OUT_OF_PAPER = -1;    //Out of paper
-  private final static int PRNSTS_OVER_HEAT = -2;        //Over heat
-  private final static int PRNSTS_UNDER_VOLTAGE = -3;    //under voltage
-  private final static int PRNSTS_BUSY = -4;            //Device is busy
-  private final static int PRNSTS_ERR = -256;            //Common error
-  private final static int PRNSTS_ERR_DRIVER = -257;
+  // Printer status constants
+  private final static int PRNSTS_OK = 0;                // OK
+  private final static int PRNSTS_OUT_OF_PAPER = -1;     // Out of paper
+  private final static int PRNSTS_OVER_HEAT = -2;        // Over heat
+  private final static int PRNSTS_UNDER_VOLTAGE = -3;    // Under voltage
+  private final static int PRNSTS_BUSY = -4;             // Device is busy
+  private final static int PRNSTS_ERR = -256;            // Common error
+  private final static int PRNSTS_ERR_DRIVER = -257;     // Driver error
 
   @Override
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
     channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "pos_printer");
     channel.setMethodCallHandler(this);
+    printThread = new HandlerThread("pos_printer");
+    printThread.start();
+    printHandler = new Handler(printThread.getLooper());
+    Log.d(TAG, "PosPrinterPlugin attached to engine");
+  }
 
+  /**
+   * Get or create PrinterManager instance with proper initialization
+   */
+  private synchronized PrinterManager getPrinterManager() {
+    if (mPrinterManager == null) {
+      try {
+        Log.d(TAG, "Initializing PrinterManager");
+        mPrinterManager = new PrinterManager();
+        int openResult = mPrinterManager.open();
+        if (openResult == 0) {
+          isPrinterInitialized = true;
+          Log.d(TAG, "PrinterManager initialized successfully");
+        } else {
+          Log.e(TAG, "Failed to open PrinterManager, result: " + openResult);
+          isPrinterInitialized = false;
+        }
+      } catch (Exception e) {
+        Log.e(TAG, "Error initializing PrinterManager", e);
+        isPrinterInitialized = false;
+      }
+    }
+    return mPrinterManager;
+  }
+
+  /**
+   * Check if printer is ready for operations
+   */
+  private boolean isPrinterReady() {
+    if (!isPrinterInitialized || mPrinterManager == null) {
+      Log.w(TAG, "Printer not initialized");
+      return false;
+    }
+    
+    int status = mPrinterManager.getStatus();
+    if (status != PRNSTS_OK) {
+      Log.w(TAG, "Printer not ready, status: " + status);
+      return false;
+    }
+    
+    return true;
+  }
+
+  /**
+   * Validate printer parameters
+   */
+  private boolean validateParameters(Map<String, Object> arguments, String... requiredParams) {
+    if (arguments == null) {
+      Log.e(TAG, "Arguments cannot be null");
+      return false;
+    }
+    
+    for (String param : requiredParams) {
+      if (!arguments.containsKey(param)) {
+        Log.e(TAG, "Missing required parameter: " + param);
+        return false;
+      }
+    }
+    return true;
   }
 
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
-    if (call.method.equals("getPlatformVersion")) {
-      result.success("Android " + android.os.Build.VERSION.RELEASE);
-    }else if(call.method.equals("printText")){
-//      testing out things
-      int ret = getPrinterManager().getStatus();
-      System.out.println("Printer status");
-      System.out.println(ret);
-      if(ret == PRNSTS_OK){
-        getPrinterManager().setupPage(3,-1);
-        System.out.println("drawing");
-        // getPrinterManager().prn_drawText("Prince",200,200,"simsun",32,false,false,0);
+    Log.d(TAG, "Method call: " + call.method);
+    
+    try {
+      switch (call.method) {
+        case "getPlatformVersion":
+          result.success("Android " + android.os.Build.VERSION.RELEASE);
+          break;
 
-
-
-        int fontSize = 24;
-        int fontStyle= 0x0000;
-        String fontName = "simsun";
-
-
-
-        int height = 0;
-
-
-        // mPrinterManager.drawText("Prince!!", 5,5," l",5,true,false, 100);
-
-        // getPrinterManager().prn_drawLine(32, 8, 136, 8, 8);
-        // getPrinterManager().prn_drawLine(32, 12, 136, 12, 8);
-        // getPrinterManager().prn_drawLine(32, 18, 136, 18, 8);
-        // getPrinterManager().prn_drawLine(32, 24, 136, 24, 8);
-        // getPrinterManager().prn_drawLine(32, 32, 136, 32, 32);
-
-        // getPrinterManager().prn_drawLine(136, 56, 240, 56, 8);
-        // getPrinterManager().prn_drawLine(136, 62, 240, 62, 8);
-        // getPrinterManager().prn_drawLine(136, 68, 240, 68, 8);
-        // getPrinterManager().prn_drawLine(136, 74, 240, 74, 8);
-        // getPrinterManager().prn_drawLine(136, 80, 240, 80, 32);
-
-        // getPrinterManager().prn_drawLine(240, 104, 344, 104, 8);
-        // getPrinterManager().prn_drawLine(240, 110, 344, 110, 8);
-        // getPrinterManager().prn_drawLine(240, 116, 344, 116, 8);
-        // getPrinterManager().prn_drawLine(240, 122, 344, 122, 8);
-        // getPrinterManager().prn_drawLine(240, 128, 344, 128, 32);
-
-        // getPrinterManager().prn_drawLine(136, 152, 240, 152, 8);
-        // getPrinterManager().prn_drawLine(136, 158, 240, 158, 8);
-        // getPrinterManager().prn_drawLine(136, 164, 240, 164, 8);
-        // getPrinterManager().prn_drawLine(136, 170, 240, 170, 8);
-        // getPrinterManager().prn_drawLine(136, 176, 240, 176, 32);
-
-        // getPrinterManager().prn_drawLine(32, 200, 136, 200, 8);
-        // getPrinterManager().prn_drawLine(32, 206, 136, 206, 8);
-        // getPrinterManager().prn_drawLine(32, 212, 136, 212, 8);
-        // getPrinterManager().prn_drawLine(32, 218, 136, 218, 8);
-        getPrinterManager().prn_drawLine(2, 2, 2, 3, 3);
-        getPrinterManager().printPage(0);
-
+        case "printText":
+          handlePrintText(result);
+          break;
+          
+        case "getStatus":
+          handleGetStatus(result);
+          break;
+          
+        case "setupPage":
+          handleSetupPage(call, result);
+          break;
+          
+        case "clearPage":
+          handleClearPage(result);
+          break;
+          
+        case "printPage":
+          handlePrintPage(call, result);
+          break;
+          
+        case "drawText":
+          handleDrawText(call, result);
+          break;
+          
+        case "drawTextEx":
+          handleDrawTextEx(call, result);
+          break;
+          
+        case "drawLine":
+          handleDrawLine(call, result);
+          break;
+          
+        case "drawBarcode":
+          handleDrawBarcode(call, result);
+          break;
+          
+        case "drawBitmap":
+          handleDrawBitmap(call, result);
+          break;
+          
+        case "drawBitmapEx":
+          handleDrawBitmapEx(call, result);
+          break;
+          
+        case "setGrayLevel":
+          handleSetGrayLevel(call, result);
+          break;
+          
+        case "setSpeedLevel":
+          handleSetSpeedLevel(call, result);
+          break;
+          
+        case "paperFeed":
+          handlePaperFeed(call, result);
+          break;
+          
+        case "dispose":
+          handleDispose(result);
+          break;
+          
+        // Legacy prn_ methods for backward compatibility
+        case "prnOpen":
+          handlePrnOpen(result);
+          break;
+          
+        case "prnClose":
+          handlePrnClose(result);
+          break;
+          
+        case "prnGetStatus":
+          handlePrnGetStatus(result);
+          break;
+          
+        case "prnSetupPage":
+          handlePrnSetupPage(call, result);
+          break;
+          
+        case "prnClearPage":
+          handlePrnClearPage(result);
+          break;
+          
+        case "prnPrintPage":
+          handlePrnPrintPage(call, result);
+          break;
+          
+        case "prnDrawText":
+          handlePrnDrawText(call, result);
+          break;
+          
+        case "prnDrawTextEx":
+          handlePrnDrawTextEx(call, result);
+          break;
+          
+        case "prnDrawLine":
+          handlePrnDrawLine(call, result);
+          break;
+          
+        case "prnDrawBarcode":
+          handlePrnDrawBarcode(call, result);
+          break;
+          
+        case "prnDrawBitmap":
+          handlePrnDrawBitmap(call, result);
+          break;
+          
+        case "prnSetBlack":
+          handlePrnSetBlack(call, result);
+          break;
+          
+        case "prnSetSpeed":
+          handlePrnSetSpeed(call, result);
+          break;
+          
+        case "prnPaperForWard":
+          handlePrnPaperForWard(call, result);
+          break;
+          
+        case "prnPaperBack":
+          handlePrnPaperBack(call, result);
+          break;
+          
+        case "prnGetTemp":
+          handlePrnGetTemp(result);
+          break;
+          
+        case "getTemp":
+          handleGetTemp(result);
+          break;
+          
+        case "printCachedPage":
+          handlePrintCachedPage(result);
+          break;
+          
+        default:
+          result.notImplemented();
+          break;
       }
+    } catch (Exception e) {
+      Log.e(TAG, "Error in method call: " + call.method, e);
+      result.error("PRINTER_ERROR", e.getMessage(), Log.getStackTraceString(e));
+    }
+  }
 
+  // Handler methods for each operation
 
-
-
-      result.success("Print testing");
-    }else if(call.method.equals("getStatus")){
-      try{
-        //      get printers status
-        int ret = getPrinterManager().getStatus();
-        result.success(ret);
-
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
+  /** Diagnostic: prints a short test line, replies with the PRNSTS_* code. */
+  private void handlePrintText(Result result) {
+    commitAsync(result, new PrintOp() {
+      @Override
+      public int run(PrinterManager pm) {
+        pm.setupPage(3, -1);
+        pm.drawLine(2, 2, 2, 3, 3);
+        return pm.printPage(0);
       }
-    }else if(call.method.equals("setupPage")){
-//      print page setup
-      try {
-        HashMap arguments = (HashMap) call.arguments;
-        int height =(int) arguments.get("height");
-        int width = (int) arguments.get("width");
-        int setup = getPrinterManager().setupPage(height,width);
-        result.success(setup);
-      } catch (Exception ex) {
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
+    });
+  }
+  private void handleGetStatus(Result result) {
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      int status = printer.getStatus();
+      result.success(status);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
 
+  private void handleSetupPage(MethodCall call, Result result) {
+    if (!validateParameters(call.arguments(), "height", "width")) {
+      result.error("INVALID_ARGUMENTS", "Missing required parameters", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    int height = (int) arguments.get("height");
+    int width = (int) arguments.get("width");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      int setupResult = printer.setupPage(height, width);
+      result.success(setupResult);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
 
-    }else if(call.method.equals("dispose")){
+  private void handleClearPage(Result result) {
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      int clearResult = printer.clearPage();
+      result.success(clearResult);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
 
-      try{
-
-//     close printer instance
-        result.success(mPrinterManager.close());
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-
-    }else if(call.method.equals("setGrayLevel")){
-      try{
-
-//     set gray level of printer
-        ArrayList arguments = (ArrayList) call.arguments;
-        int level = (int) arguments.get(0);
-        getPrinterManager().setGrayLevel(level);
-        result.success(0);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-
-    }else if(call.method.equals("paperFeed")){
-      try{
-
-//     set paper feed length of printer
-        ArrayList arguments = (ArrayList) call.arguments;
-        int length = (int) arguments.get(0);
-        getPrinterManager().paperFeed(length);
-        result.success(0);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("setSpeedLevel")){
-      try{
-
-//     set speed level of printer
-        ArrayList arguments = (ArrayList) call.arguments;
-        int speedLevel = (int) arguments.get(0);
-        getPrinterManager().setSpeedLevel(speedLevel);
-        result.success(0);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("clearPage")){
-      try{
-
-//     clear printer page
-
-       int page =  getPrinterManager().clearPage();
-        result.success(page);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("printPage")){
-      try{
-
-//     print page
-        ArrayList arguments = (ArrayList) call.arguments;
-        int rotate = (int) arguments.get(0);
-        int ret = getPrinterManager().printPage(rotate);
-        result.success(ret);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("drawLine")){
-      try{
-
-//     drawline
-        HashMap arguments = (HashMap) call.arguments;
-        int x0 = (int) arguments.get("x0");
-        int y0 = (int) arguments.get("y0");
-        int x1 = (int) arguments.get("x1");
-        int y1 = (int) arguments.get("y1");
-        int lineWidth = (int) arguments.get("lineWidth");
-        System.out.println("x0:"+x0+"y0:"+y0+"x1:"+x1+"y1:"+y1+"lineWidth:"+lineWidth);
-
-        result.success( getPrinterManager().drawLine(x0,y0,x1,y1,lineWidth));
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("drawText")){
-      System.out.println("inside drawText");
-      try{
-
-//     drawText
-        HashMap arguments = (HashMap) call.arguments;
-        String data = (String) arguments.get("data");
-        int x = (int) arguments.get("x");
-        int y = (int) arguments.get("y");
-        String fontName = (String) arguments.get("fontName");
-        int fontSize = (int) arguments.get("fontSize");
-        boolean bold = (boolean) arguments.get("isBold");
-        boolean italic = (boolean) arguments.get("isItalic");
-        int rotate = (int) arguments.get("rotate");
-        System.out.println(arguments.toString());
-
-        int resp = getPrinterManager().drawText(data,x,y,fontName,fontSize,bold,italic,rotate);
-        result.success(resp);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("drawTextEx")){
-      try{
-
-//     drawTextEx
-        HashMap arguments = (HashMap) call.arguments;
-        String data = (String) arguments.get("data");
-        int x = (int) arguments.get("x");
-        int y = (int) arguments.get("y");
-        int width = (int) arguments.get("width");
-        int height = (int) arguments.get("height");
-
-        String fontName = (String) arguments.get("fontName");
-        int fontSize = (int) arguments.get("fontSize");
-        boolean bold = (boolean) arguments.get("isBold");
-        boolean italic = (boolean) arguments.get("isItalic");
-        int rotate = (int) arguments.get("rotate");
-        int style = (int) arguments.get("style");
-        int format = (int) arguments.get("format");
-
-
-        result.success( getPrinterManager().drawTextEx(data, x,y,width,height,fontName,fontSize,rotate,style,format));
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("drawBarcode")){
-      try{
-
-//     drawBarcode
-        HashMap arguments = (HashMap) call.arguments;
-        String data = (String) arguments.get("data");
-        int x = (int) arguments.get("x");
-        int y = (int) arguments.get("y");
-        int barcodetype = (int) arguments.get("barcodetype");
-        int width = (int) arguments.get("width");
-        int height = (int) arguments.get("height");
-        int rotate = (int) arguments.get("rotate");
-
-        result.success( getPrinterManager().drawBarcode(data, x,y,barcodetype,width,height,rotate));
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("drawBitmap")){
-      try{
-
-//     drawBitmap
-        HashMap arguments = (HashMap) call.arguments;
-        String image = (String) arguments.get("image");
-
-        FileInputStream input = new FileInputStream(image);
-        BufferedInputStream buffer = new BufferedInputStream(input);
-        byte[] bMapArray = new byte[buffer.available()];
-        buffer.read(bMapArray);
-        Bitmap bitmap = BitmapFactory.decodeByteArray(bMapArray,0,bMapArray.length);
-        int xDest = (int) arguments.get("xDest");
-        int yDest = (int) arguments.get("yDest");
-        
-        ///
-        result.success( getPrinterManager().drawBitmap(bitmap, xDest,yDest));
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("drawBitmapEx")){
-      try{
-
-//     drawBitmapEx
-        HashMap arguments = (HashMap) call.arguments;
-        byte[] pbmp = (byte[]) arguments.get("byte");
-        int xDest = (int) arguments.get("xDest");
-        int yDest = (int) arguments.get("yDest");
-        int widthDest = (int) arguments.get("widthDest");
-        int heightDest = (int) arguments.get("heightDest");
-
-        
-        result.success( getPrinterManager().drawBitmapEx(pbmp, xDest,yDest,widthDest,heightDest));
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_open")){
-      try{
-
-//     prn_open
-          result.success( getPrinterManager().prn_open());
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_close")){
-      try{
-
-//     prn_close
-getPrinterManager().prn_close();
-        result.success( 0);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_setBlack")){
-      try{
-        ArrayList arguments = (ArrayList) call.arguments;
-        int level = (int) arguments.get(0);
-//     prn_setBlack
-        result.success( getPrinterManager().prn_setBlack(level));
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_paperForWard")){
-      try{
-        ArrayList arguments = (ArrayList) call.arguments;
-        int length = (int) arguments.get(0);
-//     prn_paperForWard
-      getPrinterManager().prn_paperForWard(length);
-        result.success( 0);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_paperBack")){
-      try{
-        ArrayList arguments = (ArrayList) call.arguments;
-        int length = (int) arguments.get(0);
-//     prn_paperBack
-      getPrinterManager().prn_paperBack(length);
-        result.success(0);
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_setSpeed")){
-      try{
-        ArrayList arguments = (ArrayList) call.arguments;
-        int level = (int) arguments.get(0);
-//     prn_setSpeed
-        result.success( getPrinterManager().prn_setSpeed(level));
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_getTemp")){
-      try{
-
-//     prn_getTemp
-        result.success( getPrinterManager().prn_getTemp());
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_setupPage")){
-      try{
-        HashMap arguments = (HashMap) call.arguments;
-        int width = (int) arguments.get("width");
-        int height = (int) arguments.get("height");
-//     prn_setupPage
-        result.success( getPrinterManager().prn_setupPage(width,height));
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_clearPage")){
-      try{
-
-//     prn_clearPage
-        result.success( getPrinterManager().prn_clearPage());
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_printPage")){
-      try{
-
-//     prn_printPage
-
-        ArrayList arguments = (ArrayList) call.arguments;
-        int rotate = (int) arguments.get(0);
-        result.success( getPrinterManager().prn_printPage(rotate));
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_drawLine")){
-      try{
-
-//     prn_drawLine
-
-        HashMap arguments = (HashMap) call.arguments;
-        int x0 = (int) arguments.get("x0");
-        int y0 = (int) arguments.get("y0");
-        int x1 = (int) arguments.get("x1");
-        int y1 = (int) arguments.get("y1");
-        int lineWidth = (int) arguments.get("lineWidth");
-        result.success( getPrinterManager().prn_drawLine(x0,y0,x1,y1,lineWidth));
-
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_drawText")){
-      try{
-
-//     prn_drawText
-
-        HashMap arguments = (HashMap) call.arguments;
-        String data = (String) arguments.get("data");
-        int x = (int) arguments.get("x");
-        int y = (int) arguments.get("y");
-        String fontName = (String) arguments.get("fontName");
-        int fontSize = (int) arguments.get("fontSize");
-        boolean bold = (boolean) arguments.get("isBold");
-        boolean italic = (boolean) arguments.get("isItalic");
-        int rotate = (int) arguments.get("rotate");
-        result.success( getPrinterManager().prn_drawText(data, x, y,fontName,fontSize,bold, italic,rotate));
-
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_drawTextEx")){
-      try{
-
-//     prn_drawTextEx
-        HashMap arguments = (HashMap) call.arguments;
-        String data = (String) arguments.get("data");
-        int x = (int) arguments.get("x");
-        int y = (int) arguments.get("y");
-        int width = (int) arguments.get("width");
-        int height = (int) arguments.get("height");
-        String fontName = (String) arguments.get("fontName");
-        int fontSize = (int) arguments.get("fontSize");
-        boolean bold = (boolean) arguments.get("isBold");
-        boolean italic = (boolean) arguments.get("isItalic");
-        int rotate = (int) arguments.get("rotate");
-        int style = (int) arguments.get("style");
-        int format = (int) arguments.get("format");
-
-
-        result.success( getPrinterManager().prn_drawTextEx(data, x,y,width,height,fontName,fontSize,rotate,style,format));
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_drawBarcode")){
-      try{
-
-//     prn_drawBarcode
-        HashMap arguments = (HashMap) call.arguments;
-        String data = (String) arguments.get("data");
-        int x = (int) arguments.get("x");
-        int y = (int) arguments.get("y");
-        int barcodetype = (int) arguments.get("barcodetype");
-        int width = (int) arguments.get("width");
-        int height = (int) arguments.get("height");
-        int rotate = (int) arguments.get("rotate");
-
-        result.success( getPrinterManager().prn_drawBarcode(data, x,y,barcodetype,width,height,rotate));
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_drawBitmap")){
-      try{
-
-//     prn_drawBitmap
-        HashMap arguments = (HashMap) call.arguments;
-        Bitmap bitmap = (Bitmap) arguments.get("bitmap");
-        int xDest = (int) arguments.get("xDest");
-        int yDest = (int) arguments.get("yDest");
-
-
-        result.success( getPrinterManager().prn_drawBitmap(bitmap, xDest,yDest));
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("prn_getStatus")){
-      try{
-
-//     prn_getStatus
-
-        result.success( getPrinterManager().prn_getStatus());
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("getTemp")){
-      try{
-
-//     getTemp
-
-        result.success( getPrinterManager().getTemp());
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
-    }else if(call.method.equals("printCachedPage")){
-      try{
-
-//     printCachedPage
-
-        result.success( getPrinterManager().printCachedPage());
-
-      }catch (Exception ex){
-        result.error("1", ex.getMessage(), ex.getStackTrace());
-      }
+  private void handlePrintPage(MethodCall call, Result result) {
+    if (!validateParameters(call.arguments(), "rotate")) {
+      result.error("INVALID_ARGUMENTS", "Missing rotate parameter", null);
+      return;
     }
 
+    Map<String, Object> arguments = call.arguments();
+    final int rotate = (int) arguments.get("rotate");
+    commitAsync(result, new PrintOp() {
+      @Override
+      public int run(PrinterManager pm) {
+        return pm.printPage(rotate);
+      }
+    });
+  }
 
+  private void handleDrawText(MethodCall call, Result result) {
+    String[] requiredParams = {"data", "x", "y", "fontName", "fontSize", "isBold", "isItalic", "rotate"};
+    if (!validateParameters(call.arguments(), requiredParams)) {
+      result.error("INVALID_ARGUMENTS", "Missing required parameters", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    String data = (String) arguments.get("data");
+    int x = (int) arguments.get("x");
+    int y = (int) arguments.get("y");
+    String fontName = (String) arguments.get("fontName");
+    int fontSize = (int) arguments.get("fontSize");
+    boolean isBold = (boolean) arguments.get("isBold");
+    boolean isItalic = (boolean) arguments.get("isItalic");
+    int rotate = (int) arguments.get("rotate");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      int drawResult = printer.drawText(data, x, y, fontName, fontSize, isBold, isItalic, rotate);
+      result.success(drawResult);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
 
-//    * end
+  private void handleDrawTextEx(MethodCall call, Result result) {
+    String[] requiredParams = {"data", "x", "y", "width", "height", "fontName", "fontSize", "isBold", "isItalic", "rotate", "style", "format"};
+    if (!validateParameters(call.arguments(), requiredParams)) {
+      result.error("INVALID_ARGUMENTS", "Missing required parameters", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    String data = (String) arguments.get("data");
+    int x = (int) arguments.get("x");
+    int y = (int) arguments.get("y");
+    int width = (int) arguments.get("width");
+    int height = (int) arguments.get("height");
+    String fontName = (String) arguments.get("fontName");
+    int fontSize = (int) arguments.get("fontSize");
+    boolean isBold = (boolean) arguments.get("isBold");
+    boolean isItalic = (boolean) arguments.get("isItalic");
+    int rotate = (int) arguments.get("rotate");
+    int style = (int) arguments.get("style");
+    int format = (int) arguments.get("format");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      int drawResult = printer.drawTextEx(data, x, y, width, height, fontName, fontSize, rotate, style, format);
+      result.success(drawResult);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handleDrawLine(MethodCall call, Result result) {
+    String[] requiredParams = {"x0", "y0", "x1", "y1", "lineWidth"};
+    if (!validateParameters(call.arguments(), requiredParams)) {
+      result.error("INVALID_ARGUMENTS", "Missing required parameters", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    int x0 = (int) arguments.get("x0");
+    int y0 = (int) arguments.get("y0");
+    int x1 = (int) arguments.get("x1");
+    int y1 = (int) arguments.get("y1");
+    int lineWidth = (int) arguments.get("lineWidth");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      int drawResult = printer.drawLine(x0, y0, x1, y1, lineWidth);
+      result.success(drawResult);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handleDrawBarcode(MethodCall call, Result result) {
+    String[] requiredParams = {"data", "x", "y", "barcodeType", "width", "height", "rotate"};
+    if (!validateParameters(call.arguments(), requiredParams)) {
+      result.error("INVALID_ARGUMENTS", "Missing required parameters", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    String data = (String) arguments.get("data");
+    int x = (int) arguments.get("x");
+    int y = (int) arguments.get("y");
+    int barcodeType = (int) arguments.get("barcodeType");
+    int width = (int) arguments.get("width");
+    int height = (int) arguments.get("height");
+    int rotate = (int) arguments.get("rotate");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      int drawResult = printer.drawBarcode(data, x, y, barcodeType, width, height, rotate);
+      result.success(drawResult);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handleDrawBitmap(MethodCall call, Result result) {
+    String[] requiredParams = {"image", "xDest", "yDest"};
+    if (!validateParameters(call.arguments(), requiredParams)) {
+      result.error("INVALID_ARGUMENTS", "Missing required parameters", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    String imagePath = (String) arguments.get("image");
+    int xDest = (int) arguments.get("xDest");
+    int yDest = (int) arguments.get("yDest");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      try {
+        File imageFile = new File(imagePath);
+        if (!imageFile.exists()) {
+          result.error("FILE_NOT_FOUND", "Image file not found: " + imagePath, null);
+          return;
+        }
+        
+        Bitmap bitmap = BitmapFactory.decodeFile(imagePath);
+        if (bitmap == null) {
+          result.error("INVALID_IMAGE", "Failed to decode image: " + imagePath, null);
+          return;
+        }
+        
+        int drawResult = printer.drawBitmap(bitmap, xDest, yDest);
+        result.success(drawResult);
+      } catch (Exception e) {
+        Log.e(TAG, "Error drawing bitmap", e);
+        result.error("BITMAP_ERROR", e.getMessage(), Log.getStackTraceString(e));
+      }
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handleDrawBitmapEx(MethodCall call, Result result) {
+    String[] requiredParams = {"bytes", "xDest", "yDest", "widthDest", "heightDest"};
+    if (!validateParameters(call.arguments(), requiredParams)) {
+      result.error("INVALID_ARGUMENTS", "Missing required parameters", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    ArrayList<Integer> bytesList = (ArrayList<Integer>) arguments.get("bytes");
+    int xDest = (int) arguments.get("xDest");
+    int yDest = (int) arguments.get("yDest");
+    int widthDest = (int) arguments.get("widthDest");
+    int heightDest = (int) arguments.get("heightDest");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      try {
+        // Convert ArrayList<Integer> to byte array
+        byte[] bytes = new byte[bytesList.size()];
+        for (int i = 0; i < bytesList.size(); i++) {
+          bytes[i] = bytesList.get(i).byteValue();
+        }
+        
+        int drawResult = printer.drawBitmapEx(bytes, xDest, yDest, widthDest, heightDest);
+        result.success(drawResult);
+      } catch (Exception e) {
+        Log.e(TAG, "Error drawing bitmap ex", e);
+        result.error("BITMAP_ERROR", e.getMessage(), Log.getStackTraceString(e));
+      }
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handleSetGrayLevel(MethodCall call, Result result) {
+    if (!validateParameters(call.arguments(), "level")) {
+      result.error("INVALID_ARGUMENTS", "Missing level parameter", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    int level = (int) arguments.get("level");
+    
+    // Validate gray level range
+    if (level < MIN_PRINTER_HUE_VALUE || level > MAX_PRINTER_HUE_VALUE) {
+      result.error("INVALID_RANGE", "Gray level must be between " + MIN_PRINTER_HUE_VALUE + " and " + MAX_PRINTER_HUE_VALUE, null);
+      return;
+    }
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      printer.setGrayLevel(level);
+      result.success(0);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handleSetSpeedLevel(MethodCall call, Result result) {
+    if (!validateParameters(call.arguments(), "level")) {
+      result.error("INVALID_ARGUMENTS", "Missing level parameter", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    int level = (int) arguments.get("level");
+    
+    // Validate speed level range
+    if (level < MIN_PRINTER_SPEED_VALUE || level > MAX_PRINTER_SPEED_VALUE) {
+      result.error("INVALID_RANGE", "Speed level must be between " + MIN_PRINTER_SPEED_VALUE + " and " + MAX_PRINTER_SPEED_VALUE, null);
+      return;
+    }
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      printer.setSpeedLevel(level);
+      result.success(0);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handlePaperFeed(MethodCall call, Result result) {
+    if (!validateParameters(call.arguments(), "length")) {
+      result.error("INVALID_ARGUMENTS", "Missing length parameter", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    int length = (int) arguments.get("length");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      printer.paperFeed(length);
+      result.success(0);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handleDispose(Result result) {
+    if (mPrinterManager != null) {
+      try {
+        int closeResult = mPrinterManager.close();
+        mPrinterManager = null;
+        isPrinterInitialized = false;
+        result.success(closeResult);
+        Log.d(TAG, "PrinterManager disposed");
+      } catch (Exception e) {
+        Log.e(TAG, "Error disposing PrinterManager", e);
+        result.error("DISPOSE_ERROR", e.getMessage(), Log.getStackTraceString(e));
+      }
+    } else {
+      result.success(0);
+    }
+  }
+
+  // Legacy prn_ methods - these are wrappers around the main methods for backward compatibility
+  private void handlePrnOpen(Result result) {
+    PrinterManager printer = getPrinterManager();
+    if (printer != null && isPrinterInitialized) {
+      result.success(0);
+    } else {
+      result.error("PRINTER_ERROR", "Failed to open printer", null);
+    }
+  }
+
+  private void handlePrnClose(Result result) {
+    handleDispose(result);
+  }
+
+  private void handlePrnGetStatus(Result result) {
+    handleGetStatus(result);
+  }
+
+  private void handlePrnSetupPage(MethodCall call, Result result) {
+    handleSetupPage(call, result);
+  }
+
+  private void handlePrnClearPage(Result result) {
+    handleClearPage(result);
+  }
+
+  private void handlePrnPrintPage(MethodCall call, Result result) {
+    handlePrintPage(call, result);
+  }
+
+  private void handlePrnDrawText(MethodCall call, Result result) {
+    handleDrawText(call, result);
+  }
+
+  private void handlePrnDrawTextEx(MethodCall call, Result result) {
+    handleDrawTextEx(call, result);
+  }
+
+  private void handlePrnDrawLine(MethodCall call, Result result) {
+    handleDrawLine(call, result);
+  }
+
+  private void handlePrnDrawBarcode(MethodCall call, Result result) {
+    handleDrawBarcode(call, result);
+  }
+
+  private void handlePrnDrawBitmap(MethodCall call, Result result) {
+    handleDrawBitmap(call, result);
+  }
+
+  private void handlePrnSetBlack(MethodCall call, Result result) {
+    handleSetGrayLevel(call, result);
+  }
+
+  private void handlePrnSetSpeed(MethodCall call, Result result) {
+    handleSetSpeedLevel(call, result);
+  }
+
+  private void handlePrnPaperForWard(MethodCall call, Result result) {
+    handlePaperFeed(call, result);
+  }
+
+  private void handlePrnPaperBack(MethodCall call, Result result) {
+    if (!validateParameters(call.arguments(), "length")) {
+      result.error("INVALID_ARGUMENTS", "Missing length parameter", null);
+      return;
+    }
+    
+    Map<String, Object> arguments = call.arguments();
+    int length = (int) arguments.get("length");
+    
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      printer.prn_paperBack(length);
+      result.success(0);
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handlePrnGetTemp(Result result) {
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      result.success(printer.prn_getTemp());
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handleGetTemp(Result result) {
+    PrinterManager printer = getPrinterManager();
+    if (printer != null) {
+      result.success(printer.getTemp());
+    } else {
+      result.error("PRINTER_ERROR", "Printer not initialized", null);
+    }
+  }
+
+  private void handlePrintCachedPage(Result result) {
+    commitAsync(result, new PrintOp() {
+      @Override
+      public int run(PrinterManager pm) {
+        return pm.printCachedPage();
+      }
+    });
   }
 
   @Override
   public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
     channel.setMethodCallHandler(null);
+    if (printThread != null) {
+      printThread.quitSafely();
+      printThread = null;
+    }
+    if (mPrinterManager != null) {
+      try {
+        mPrinterManager.close();
+      } catch (Exception e) {
+        Log.e(TAG, "Error closing PrinterManager on detach", e);
+      }
+      mPrinterManager = null;
+      isPrinterInitialized = false;
+    }
+    Log.d(TAG, "PosPrinterPlugin detached from engine");
   }
 }
 

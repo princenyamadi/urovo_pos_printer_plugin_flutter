@@ -1,3 +1,17 @@
+## 0.3.9+8
+
+### Fixes
+- **Fixed**: page-commit calls (`printPage`, `prnPrintPage`, `printCachedPage`, `print`) now run
+  off the platform thread on a dedicated `HandlerThread`, so printing no longer freezes the Flutter UI.
+- **Added**: automatic retry (3×, 300ms apart) while the printer reports `PRNSTS_BUSY` before a commit.
+- **Fixed**: `result.error(...)` passed a `StackTraceElement[]` (not serializable over the method
+  channel), which swallowed native error details — now sends `Log.getStackTraceString(e)`.
+- **Fixed**: `prnPaperBack`, `prnGetTemp`, `getTemp`, `printCachedPage` were stubbed placeholders;
+  they now call the real SDK methods.
+- **Fixed**: `print()` returned `String?` and had no native handler (`MissingPluginException`);
+  it now returns the `PRNSTS_*` code from a diagnostic print.
+- **Added**: `PosPrinter.statusOk`/`statusBusy`/... constants and `PosPrinter.statusMessage(code)`.
+
 ## 0.3.7+6
 
 ### Major Fixes

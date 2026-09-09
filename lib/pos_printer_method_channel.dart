@@ -17,9 +17,8 @@ class MethodChannelPosPrinter extends PosPrinterPlatform {
   }
 
   @override
-  Future<String?> print() async {
-    final print = await methodChannel.invokeMethod<String>('printText');
-    return print;
+  Future<int?> print() async {
+    return await methodChannel.invokeMethod<int>('printText');
   }
 
   @override

@@ -13,6 +13,9 @@ import android.device.PrinterManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
 import android.util.Log;
 
 import java.io.File;
@@ -30,6 +33,70 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
   private MethodChannel channel;
   private PrinterManager mPrinterManager;
   private boolean isPrinterInitialized = false;
+
+  // Printing blocks until the page is done, so page-commit calls run off the
+  // platform thread on a single HandlerThread (its own Looper, in case the SDK
+  // posts internally). Single thread => commits run in the order Dart made them.
+  private HandlerThread printThread;
+  private Handler printHandler;
+  private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+  // ponytail: fixed 3-try BUSY backoff, 300ms apart. Widen if slow devices report false BUSY.
+  private final static int PRINT_MAX_TRIES = 3;
+  private final static long PRINT_BUSY_DELAY_MS = 300;
+
+  private interface PrintOp {
+    int run(PrinterManager pm);
+  }
+
+  /**
+   * Runs a page-commit off the platform thread: checks printer status (retrying
+   * while BUSY), runs the op if OK, and replies on the platform thread with the
+   * resulting PRNSTS_* code. Any value other than PRNSTS_OK means nothing printed.
+   */
+  private void commitAsync(final Result result, final PrintOp op) {
+    printHandler.post(new Runnable() {
+      @Override
+      public void run() {
+        final Object reply;
+        try {
+          PrinterManager pm = getPrinterManager();
+          if (pm == null) {
+            postError(result, "PRINTER_ERROR", "Printer not initialized");
+            return;
+          }
+          int status = pm.getStatus();
+          for (int tries = 1; status == PRNSTS_BUSY && tries < PRINT_MAX_TRIES; tries++) {
+            try {
+              Thread.sleep(PRINT_BUSY_DELAY_MS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+            status = pm.getStatus();
+          }
+          reply = (status == PRNSTS_OK) ? op.run(pm) : status;
+        } catch (final Exception ex) {
+          postError(result, "PRINTER_ERROR", ex.getMessage());
+          return;
+        }
+        mainHandler.post(new Runnable() {
+          @Override
+          public void run() {
+            result.success(reply);
+          }
+        });
+      }
+    });
+  }
+
+  private void postError(final Result result, final String code, final String message) {
+    mainHandler.post(new Runnable() {
+      @Override
+      public void run() {
+        result.error(code, message, null);
+      }
+    });
+  }
 
   // Printer configuration constants
   private final static int DEF_PRINTER_HUE_VALUE = 0;
@@ -53,6 +120,9 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
   public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
     channel = new MethodChannel(flutterPluginBinding.getBinaryMessenger(), "pos_printer");
     channel.setMethodCallHandler(this);
+    printThread = new HandlerThread("pos_printer");
+    printThread.start();
+    printHandler = new Handler(printThread.getLooper());
     Log.d(TAG, "PosPrinterPlugin attached to engine");
   }
 
@@ -124,6 +194,10 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
       switch (call.method) {
         case "getPlatformVersion":
           result.success("Android " + android.os.Build.VERSION.RELEASE);
+          break;
+
+        case "printText":
+          handlePrintText(result);
           break;
           
         case "getStatus":
@@ -261,11 +335,23 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
       }
     } catch (Exception e) {
       Log.e(TAG, "Error in method call: " + call.method, e);
-      result.error("PRINTER_ERROR", e.getMessage(), e.getStackTrace());
+      result.error("PRINTER_ERROR", e.getMessage(), Log.getStackTraceString(e));
     }
   }
 
   // Handler methods for each operation
+
+  /** Diagnostic: prints a short test line, replies with the PRNSTS_* code. */
+  private void handlePrintText(Result result) {
+    commitAsync(result, new PrintOp() {
+      @Override
+      public int run(PrinterManager pm) {
+        pm.setupPage(3, -1);
+        pm.drawLine(2, 2, 2, 3, 3);
+        return pm.printPage(0);
+      }
+    });
+  }
   private void handleGetStatus(Result result) {
     PrinterManager printer = getPrinterManager();
     if (printer != null) {
@@ -310,17 +396,15 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
       result.error("INVALID_ARGUMENTS", "Missing rotate parameter", null);
       return;
     }
-    
+
     Map<String, Object> arguments = call.arguments();
-    int rotate = (int) arguments.get("rotate");
-    
-    PrinterManager printer = getPrinterManager();
-    if (printer != null) {
-      int printResult = printer.printPage(rotate);
-      result.success(printResult);
-    } else {
-      result.error("PRINTER_ERROR", "Printer not initialized", null);
-    }
+    final int rotate = (int) arguments.get("rotate");
+    commitAsync(result, new PrintOp() {
+      @Override
+      public int run(PrinterManager pm) {
+        return pm.printPage(rotate);
+      }
+    });
   }
 
   private void handleDrawText(MethodCall call, Result result) {
@@ -458,7 +542,7 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
         result.success(drawResult);
       } catch (Exception e) {
         Log.e(TAG, "Error drawing bitmap", e);
-        result.error("BITMAP_ERROR", e.getMessage(), e.getStackTrace());
+        result.error("BITMAP_ERROR", e.getMessage(), Log.getStackTraceString(e));
       }
     } else {
       result.error("PRINTER_ERROR", "Printer not initialized", null);
@@ -492,7 +576,7 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
         result.success(drawResult);
       } catch (Exception e) {
         Log.e(TAG, "Error drawing bitmap ex", e);
-        result.error("BITMAP_ERROR", e.getMessage(), e.getStackTrace());
+        result.error("BITMAP_ERROR", e.getMessage(), Log.getStackTraceString(e));
       }
     } else {
       result.error("PRINTER_ERROR", "Printer not initialized", null);
@@ -575,7 +659,7 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
         Log.d(TAG, "PrinterManager disposed");
       } catch (Exception e) {
         Log.e(TAG, "Error disposing PrinterManager", e);
-        result.error("DISPOSE_ERROR", e.getMessage(), e.getStackTrace());
+        result.error("DISPOSE_ERROR", e.getMessage(), Log.getStackTraceString(e));
       }
     } else {
       result.success(0);
@@ -655,8 +739,7 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
     
     PrinterManager printer = getPrinterManager();
     if (printer != null) {
-      // Note: paperBack method might not exist in all SDK versions
-      // This is a placeholder implementation
+      printer.prn_paperBack(length);
       result.success(0);
     } else {
       result.error("PRINTER_ERROR", "Printer not initialized", null);
@@ -666,32 +749,37 @@ public class PosPrinterPlugin implements FlutterPlugin, MethodCallHandler {
   private void handlePrnGetTemp(Result result) {
     PrinterManager printer = getPrinterManager();
     if (printer != null) {
-      // Note: getTemp method might not exist in all SDK versions
-      // This is a placeholder implementation
-      result.success(25); // Default temperature
+      result.success(printer.prn_getTemp());
     } else {
       result.error("PRINTER_ERROR", "Printer not initialized", null);
     }
   }
 
   private void handleGetTemp(Result result) {
-    handlePrnGetTemp(result);
-  }
-
-  private void handlePrintCachedPage(Result result) {
     PrinterManager printer = getPrinterManager();
     if (printer != null) {
-      // Note: printCachedPage method might not exist in all SDK versions
-      // This is a placeholder implementation
-      result.success(0);
+      result.success(printer.getTemp());
     } else {
       result.error("PRINTER_ERROR", "Printer not initialized", null);
     }
   }
 
+  private void handlePrintCachedPage(Result result) {
+    commitAsync(result, new PrintOp() {
+      @Override
+      public int run(PrinterManager pm) {
+        return pm.printCachedPage();
+      }
+    });
+  }
+
   @Override
   public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
     channel.setMethodCallHandler(null);
+    if (printThread != null) {
+      printThread.quitSafely();
+      printThread = null;
+    }
     if (mPrinterManager != null) {
       try {
         mPrinterManager.close();
